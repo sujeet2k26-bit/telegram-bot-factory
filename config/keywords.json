@@ -1,0 +1,51 @@
+{
+  "_comment": "Keyword lists used for virality scoring and guardrail filtering.",
+
+  "trending_keywords": {
+    "_comment": "Articles containing these keywords get a higher virality score.",
+    "ai_technology": [
+      "GPT", "ChatGPT", "Gemini", "Claude", "LLM", "AI model", "artificial intelligence",
+      "machine learning", "deep learning", "OpenAI", "Google AI", "Anthropic", "Meta AI",
+      "Mistral", "Llama", "neural network", "AI agent", "generative AI", "multimodal",
+      "AGI", "AI safety", "AI regulation", "robotics", "AI chip", "GPU", "Nvidia"
+    ],
+    "bollywood": [
+      "box office", "release date", "trailer", "first look", "OTT", "Netflix",
+      "Amazon Prime", "Disney+", "Hotstar", "award", "Filmfare", "IIFA",
+      "Shah Rukh Khan", "Salman Khan", "Deepika Padukone", "Ranveer Singh",
+      "Alia Bhatt", "Ranbir Kapoor", "Priyanka Chopra", "Akshay Kumar",
+      "Katrina Kaif", "Hrithik Roshan", "Tiger Shroff", "Karan Johar"
+    ]
+  },
+
+  "blocked_keywords": {
+    "_comment": "Articles containing these keywords are blocked by the guardrail filter. These are hard blocks — no exceptions.",
+
+    "hate_speech": [
+      "communal riot", "religious violence", "caste attack", "lynch mob",
+      "kill muslims", "kill hindus", "kill christians", "kill sikhs",
+      "religious slur", "caste slur"
+    ],
+
+    "sexual_content": [
+      "explicit sex", "nude", "pornography", "adult content", "XXX",
+      "sexual assault details", "rape details"
+    ],
+
+    "violence": [
+      "graphic murder", "beheading", "torture video", "gore",
+      "brutal killing details"
+    ],
+
+    "political": [
+      "election propaganda", "vote for", "political party manifesto",
+      "BJP campaign", "Congress campaign", "AAP campaign", "election rigging",
+      "booth capturing"
+    ],
+
+    "clickbait_patterns": [
+      "SHOCKING", "You won't BELIEVE", "EXPOSED", "LEAKED VIDEO",
+      "WATCH BEFORE DELETED", "GOING VIRAL NOW", "SECRET REVEALED"
+    ]
+  }
+}

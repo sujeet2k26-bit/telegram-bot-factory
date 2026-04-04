@@ -1,0 +1,48 @@
+{
+  "_comment": "Trusted RSS sources for the Bollywood Buzz Bot. Only sources listed here will be fetched. Add new sources by appending to the list.",
+
+  "sources": [
+    {
+      "name": "Bollywood Hungama",
+      "website": "https://www.bollywoodhungama.com",
+      "rss_url": "https://www.bollywoodhungama.com/rss/news.xml",
+      "category": "bollywood",
+      "credibility": "high"
+    },
+    {
+      "name": "NDTV Entertainment",
+      "website": "https://entertainment.ndtv.com",
+      "rss_url": "https://feeds.feedburner.com/ndtvmovies",
+      "category": "bollywood",
+      "credibility": "high"
+    },
+    {
+      "name": "India Today Entertainment",
+      "website": "https://www.indiatoday.in/entertainment",
+      "rss_url": "https://www.indiatoday.in/rss/1206550",
+      "category": "bollywood",
+      "credibility": "high"
+    },
+    {
+      "name": "Hindustan Times Entertainment",
+      "website": "https://www.hindustantimes.com/entertainment",
+      "rss_url": "https://www.hindustantimes.com/feeds/rss/entertainment/rssfeed.xml",
+      "category": "bollywood",
+      "credibility": "high"
+    },
+    {
+      "name": "Filmfare",
+      "website": "https://www.filmfare.com",
+      "rss_url": "https://www.filmfare.com/rss/news.xml",
+      "category": "bollywood",
+      "credibility": "high"
+    },
+    {
+      "name": "Pinkvilla",
+      "website": "https://www.pinkvilla.com",
+      "rss_url": "https://www.pinkvilla.com/rss.xml",
+      "category": "bollywood",
+      "credibility": "medium"
+    }
+  ]
+}

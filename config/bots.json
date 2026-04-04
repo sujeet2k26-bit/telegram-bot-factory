@@ -1,0 +1,52 @@
+{
+  "_comment": "Master bot registry. Each object in 'bots' defines one Telegram bot. To activate a bot, set 'active' to true and fill in its .env variables. To add a new bot, copy an existing entry and update the fields.",
+
+  "bots": [
+    {
+      "id": "ai_news",
+      "name": "AI News Bot",
+      "handle": "@AINewsDaily_Bot",
+      "domain": "ai_technology",
+      "language": "english",
+      "tone": "editorial_social",
+      "posts_per_day": 1,
+      "digest_count": 5,
+      "schedule_times": ["07:00"],
+      "sources_file": "config/sources_ai.json",
+      "prompt_file": "generator/prompts_ai_news.py",
+      "bot_token_env": "TELEGRAM_AI_BOT_TOKEN",
+      "channel_id_env": "TELEGRAM_AI_CHANNEL_ID",
+      "active": true
+    },
+    {
+      "id": "bollywood",
+      "name": "Bollywood Buzz Bot",
+      "handle": "@BollywoodBuzzBot",
+      "domain": "bollywood_entertainment",
+      "language": "hindi_hinglish",
+      "tone": "conversational_editorial",
+      "posts_per_day": 2,
+      "schedule_times": ["07:00", "18:00"],
+      "sources_file": "config/sources_bollywood.json",
+      "prompt_file": "generator/prompts_bollywood.py",
+      "bot_token_env": "TELEGRAM_BOLLYWOOD_BOT_TOKEN",
+      "channel_id_env": "TELEGRAM_BOLLYWOOD_CHANNEL_ID",
+      "active": true
+    },
+    {
+      "id": "astrology",
+      "name": "Daily Astrology Bot",
+      "handle": "@DailyAstrologyBot",
+      "domain": "astrology_hindi_calendar",
+      "language": "hindi",
+      "tone": "spiritual_informative",
+      "posts_per_day": 1,
+      "schedule_times": ["06:00"],
+      "sources_file": "config/sources_astrology.json",
+      "prompt_file": "generator/prompts_astrology.py",
+      "bot_token_env": "TELEGRAM_ASTROLOGY_BOT_TOKEN",
+      "channel_id_env": "TELEGRAM_ASTROLOGY_CHANNEL_ID",
+      "active": false
+    }
+  ]
+}

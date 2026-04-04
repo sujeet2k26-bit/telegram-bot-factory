@@ -1,0 +1,36 @@
+# ─────────────────────────────────────────────
+# requirements.txt
+# All Python packages needed to run the AI News Bot project.
+# Install everything with:  pip install -r requirements.txt
+# ─────────────────────────────────────────────
+
+# RSS feed parsing — reads news feeds from websites
+feedparser==6.0.11
+
+# HTTP requests — makes web API calls (NewsAPI, etc.)
+requests==2.31.0
+
+# Load .env file — reads your API keys from the .env file into the app
+python-dotenv==1.0.0
+
+# Euri AI — OpenAI-compatible SDK used to call Gemini models via Euri platform
+# Euri is an API gateway (euron.one) that gives access to 200+ models via one API key
+openai>=1.30.0
+
+# Euri native SDK — optional helper, provides EuriaiClient for direct use
+euriai
+
+# Telegram Bot — sends messages and handles commands on Telegram
+python-telegram-bot==21.10
+
+# Job Scheduling — runs fetch/publish jobs automatically at set times
+APScheduler==3.10.4
+
+# SQLAlchemy — makes it easy to read/write to the SQLite database
+SQLAlchemy>=2.0.36
+
+# Hash utilities — used for deduplication (detecting duplicate articles)
+# (built into Python standard library — no install needed)
+
+# Date/time utilities — used for scheduling and recency scoring
+# (built into Python standard library — no install needed)

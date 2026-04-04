@@ -1,0 +1,156 @@
+{
+  "_comment": "Trusted RSS sources for the AI News Bot. Each entry has a name, rss_url, website, category, and credibility. Only sources listed here will be fetched. Add new sources by appending to the list.",
+
+  "sources": [
+
+    {
+      "_group": "Official AI Company Blogs",
+      "name": "OpenAI Blog",
+      "website": "https://openai.com/blog",
+      "rss_url": "https://openai.com/blog/rss.xml",
+      "category": "ai_official",
+      "credibility": "high"
+    },
+    {
+      "name": "Anthropic Blog",
+      "website": "https://www.anthropic.com/news",
+      "rss_url": "https://www.anthropic.com/rss.xml",
+      "category": "ai_official",
+      "credibility": "high"
+    },
+    {
+      "name": "Google DeepMind Blog",
+      "website": "https://deepmind.google/discover/blog",
+      "rss_url": "https://deepmind.google/blog/rss.xml",
+      "category": "ai_official",
+      "credibility": "high"
+    },
+    {
+      "name": "Google AI Blog",
+      "website": "https://blog.google/technology/ai/",
+      "rss_url": "https://blog.google/technology/ai/rss/",
+      "category": "ai_official",
+      "credibility": "high"
+    },
+    {
+      "name": "Meta AI Blog",
+      "website": "https://ai.meta.com/blog",
+      "rss_url": "https://ai.meta.com/blog/feed/",
+      "category": "ai_official",
+      "credibility": "high"
+    },
+    {
+      "name": "Microsoft AI Blog",
+      "website": "https://blogs.microsoft.com/ai",
+      "rss_url": "https://blogs.microsoft.com/ai/feed/",
+      "category": "ai_official",
+      "credibility": "high"
+    },
+
+    {
+      "_group": "Tech News Websites",
+      "name": "TechCrunch AI",
+      "website": "https://techcrunch.com",
+      "rss_url": "https://techcrunch.com/feed/",
+      "category": "ai_technology",
+      "credibility": "high"
+    },
+    {
+      "name": "The Verge",
+      "website": "https://www.theverge.com",
+      "rss_url": "https://www.theverge.com/rss/index.xml",
+      "category": "ai_technology",
+      "credibility": "high"
+    },
+    {
+      "name": "Ars Technica",
+      "website": "https://arstechnica.com",
+      "rss_url": "https://arstechnica.com/feed/",
+      "category": "ai_technology",
+      "credibility": "high"
+    },
+    {
+      "name": "VentureBeat AI",
+      "website": "https://venturebeat.com",
+      "rss_url": "https://venturebeat.com/category/ai/feed/",
+      "category": "ai_technology",
+      "credibility": "high"
+    },
+    {
+      "name": "Artificial Intelligence News",
+      "website": "https://www.artificialintelligence-news.com",
+      "rss_url": "https://www.artificialintelligence-news.com/feed/",
+      "category": "ai_technology",
+      "credibility": "medium"
+    },
+
+    {
+      "_group": "Research Sources",
+      "name": "MIT News AI",
+      "website": "https://news.mit.edu",
+      "rss_url": "https://news.mit.edu/rss/feed.xml",
+      "category": "ai_research",
+      "credibility": "high"
+    },
+    {
+      "name": "ArXiv cs.AI",
+      "website": "https://arxiv.org",
+      "rss_url": "https://arxiv.org/rss/cs.AI",
+      "category": "ai_research",
+      "credibility": "high"
+    },
+    {
+      "name": "ArXiv cs.LG",
+      "website": "https://arxiv.org",
+      "rss_url": "https://arxiv.org/rss/cs.LG",
+      "category": "ai_research",
+      "credibility": "high"
+    },
+    {
+      "name": "Papers With Code",
+      "website": "https://paperswithcode.com",
+      "rss_url": "https://paperswithcode.com/blog/feed",
+      "category": "ai_research",
+      "credibility": "high"
+    },
+    {
+      "name": "BAIR Blog",
+      "website": "https://bair.berkeley.edu/blog",
+      "rss_url": "https://bair.berkeley.edu/blog/feed.xml",
+      "category": "ai_research",
+      "credibility": "high"
+    },
+
+    {
+      "_group": "Newsletters (RSS where available)",
+      "name": "TLDR AI",
+      "website": "https://tldr.tech/ai",
+      "rss_url": "https://tldr.tech/ai/rss",
+      "category": "ai_newsletter",
+      "credibility": "high"
+    },
+    {
+      "name": "The Rundown AI",
+      "website": "https://www.therundown.ai",
+      "rss_url": "https://www.therundown.ai/feed",
+      "category": "ai_newsletter",
+      "credibility": "high"
+    },
+    {
+      "name": "Ben's Bites",
+      "website": "https://www.bensbites.com",
+      "rss_url": "https://www.bensbites.com/feed",
+      "category": "ai_newsletter",
+      "credibility": "high"
+    },
+
+    {
+      "_group": "Community Sources",
+      "name": "Hacker News",
+      "website": "https://news.ycombinator.com",
+      "rss_url": "https://news.ycombinator.com/rss",
+      "category": "ai_community",
+      "credibility": "high"
+    }
+  ]
+}
