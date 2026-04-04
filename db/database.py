@@ -91,6 +91,43 @@ def init_db() -> None:
         logger.error("Failed to initialise database: %s", str(e))
         raise  # Re-raise the error so main.py knows something went wrong
 
+    # ── Run column migrations for existing databases ───────────────────────
+    # SQLAlchemy's create_all() only creates new tables — it never modifies
+    # existing ones. We add new columns manually via ALTER TABLE.
+    # Each ALTER TABLE is wrapped in try/except so it silently skips if the
+    # column already exists (SQLite raises "duplicate column name" in that case).
+    _run_migrations()
+
+
+def _run_migrations() -> None:
+    """
+    Applies incremental column additions to existing database tables.
+
+    SQLAlchemy's create_all() only creates new tables — it never alters
+    existing ones to add new columns. This function fills that gap by
+    running ALTER TABLE statements for each new column we've added.
+
+    Each statement is safe to run multiple times — SQLite raises an error
+    if the column already exists, which we catch and ignore.
+
+    Returns:
+        None
+    """
+    migrations = [
+        # Added for A/B headline testing — stores an AI-generated alt headline
+        "ALTER TABLE posts ADD COLUMN headline_b TEXT",
+    ]
+
+    with engine.connect() as conn:
+        for sql in migrations:
+            try:
+                conn.execute(text(sql))
+                conn.commit()
+                logger.info("Migration applied: %s", sql)
+            except Exception:
+                # Column already exists — safe to ignore
+                pass
+
 
 @contextmanager
 def get_session() -> Session:

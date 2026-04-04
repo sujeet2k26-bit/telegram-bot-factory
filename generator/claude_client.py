@@ -337,12 +337,19 @@ def generate_and_save_post(article: Article, bot_id: str) -> Post | None:
     image_url = generate_cover_image(article, bot_id)
     # image_url may be None if image generation fails — that's acceptable
 
-    # ── Step 4: Save post to database ─────────────────────────────────────
+    # ── Step 4: Generate alternative headline for A/B testing ─────────────
+    # Skipped for astrology — the tithi header is factual, not creative copy.
+    headline_b = None
+    if bot_id != "astrology":
+        headline_b = _generate_headline_variant(post_text, bot_id)
+
+    # ── Step 5: Save post to database ─────────────────────────────────────
     post = _save_post_to_db(
         article_id=article.id,
         bot_id=bot_id,
         content=post_text,
         image_url=image_url,
+        headline_b=headline_b,
     )
 
     if post:
@@ -352,6 +359,113 @@ def generate_and_save_post(article: Article, bot_id: str) -> Post | None:
         )
 
     return post
+
+
+def _generate_headline_variant(content: str, bot_id: str) -> str | None:
+    """
+    Generates one alternative headline for the first story in a digest post.
+
+    Used for A/B headline testing in the review interface. The reviewer
+    sees both headlines and can choose which one to publish with.
+
+    Only called for digest bots (ai_news, bollywood). Skipped for astrology
+    because the tithi header is factual data, not creative copy.
+
+    Args:
+        content (str): The full generated post text (first ~400 chars are used).
+        bot_id (str):  The bot ID — affects language/tone of the alt headline.
+
+    Returns:
+        str:  A single alternative headline (no prefix, just the text).
+        None: If generation failed.
+    """
+    try:
+        preview = content[:400]
+        lang_note = "Hinglish (Hindi+English mix)" if bot_id == "bollywood" else "English"
+
+        prompt = (
+            f"Here is a news post:\n\n{preview}\n\n"
+            f"Write ONE alternative headline for the FIRST numbered story (1️⃣).\n"
+            f"Rules:\n"
+            f"- Language: {lang_note}\n"
+            f"- Max 12 words\n"
+            f"- Same tone as the original but a different angle or word choice\n"
+            f"- Output ONLY the headline text — no prefix, no explanation, nothing else"
+        )
+
+        client = get_client()
+        response = client.chat.completions.create(
+            model=settings.TEXT_MODEL,
+            messages=[
+                {"role": "system", "content": "You are a headline writer. Output only the requested headline, nothing else."},
+                {"role": "user",   "content": prompt},
+            ],
+            max_tokens=80,  # Headlines are short — no need for more
+        )
+
+        result = response.choices[0].message.content
+        if result and result.strip():
+            # Strip any accidental quotes or asterisks the model may wrap around it
+            return result.strip().strip("*\"'")
+        return None
+
+    except Exception as e:
+        # Non-critical — post still works fine without a headline variant
+        logger.warning("Headline variant generation failed (non-critical): %s", str(e))
+        return None
+
+
+def apply_edit_instruction(content: str, instruction: str, bot_id: str) -> str | None:
+    """
+    Applies a reviewer's edit instruction to a post using Gemini.
+
+    Called by the /edit command flow in review_interface.py when the
+    reviewer describes what they want changed (e.g. "make the headline
+    more dramatic" or "shorten the remedy section").
+
+    Args:
+        content (str):     The current full post text to be edited.
+        instruction (str): Free-text description of what to change.
+        bot_id (str):      Used to load the correct system prompt for tone.
+
+    Returns:
+        str:  The edited post content if successful.
+        None: If the API call failed.
+    """
+    try:
+        prompt_module = load_prompt_module(bot_id)
+        system_prompt = prompt_module.SYSTEM_PROMPT
+
+        user_prompt = (
+            f"Here is a Telegram post that needs a small edit:\n\n"
+            f"---\n{content}\n---\n\n"
+            f"Apply this change: {instruction}\n\n"
+            f"Rules:\n"
+            f"- Return ONLY the updated post content\n"
+            f"- Keep the same format, structure, and emojis\n"
+            f"- Apply ONLY the requested change — do not rewrite unrelated sections\n"
+            f"- Do not add any preamble, explanation, or 'Here is the updated post' prefix"
+        )
+
+        client = get_client()
+        response = client.chat.completions.create(
+            model=settings.TEXT_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user",   "content": user_prompt},
+            ],
+            max_tokens=settings.TEXT_MAX_TOKENS,
+        )
+
+        result = response.choices[0].message.content
+        if result and result.strip():
+            logger.info("Edit applied successfully for bot '%s' (%d chars)", bot_id, len(result))
+            return result.strip()
+        return None
+
+    except Exception as e:
+        logger.error("apply_edit_instruction failed for bot '%s': %s", bot_id, str(e))
+        return None
 
 
 def _inject_article_urls(content: str, articles_data: list) -> str:
@@ -507,12 +621,16 @@ def generate_digest_post(articles: list, bot_id: str) -> Post | None:
     top_article = articles[0]
     image_url = _generate_digest_cover_image(articles_data, bot_id)
 
-    # ── Step 5: Save to DB (linked to the top article) ────────────────────
+    # ── Step 5: Generate alternative headline for A/B testing ─────────────
+    headline_b = _generate_headline_variant(digest_text, bot_id)
+
+    # ── Step 6: Save to DB (linked to the top article) ────────────────────
     post = _save_post_to_db(
         article_id=top_article.id,
         bot_id=bot_id,
         content=digest_text,
         image_url=image_url,
+        headline_b=headline_b,
     )
 
     if post:
@@ -525,15 +643,17 @@ def generate_digest_post(articles: list, bot_id: str) -> Post | None:
 
 
 def _save_post_to_db(article_id: int, bot_id: str,
-                      content: str, image_url: str | None) -> Post | None:
+                      content: str, image_url: str | None,
+                      headline_b: str | None = None) -> Post | None:
     """
     Saves a generated post to the posts table in the database.
 
     Args:
-        article_id (int):       ID of the source article.
-        bot_id (str):           ID of the bot that will publish this post.
-        content (str):          The generated post text.
-        image_url (str | None): URL of the generated cover image, or None.
+        article_id (int):        ID of the source article.
+        bot_id (str):            ID of the bot that will publish this post.
+        content (str):           The generated post text.
+        image_url (str | None):  URL of the generated cover image, or None.
+        headline_b (str | None): Alternative headline for A/B testing, or None.
 
     Returns:
         Post:  The newly created Post database object.
@@ -546,6 +666,7 @@ def _save_post_to_db(article_id: int, bot_id: str,
                 bot_id=bot_id,
                 content=content,
                 image_url=image_url,
+                headline_b=headline_b,
                 status="pending_review",
                 created_at=datetime.utcnow(),
             )

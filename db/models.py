@@ -155,6 +155,12 @@ class Post(Base):
     # If the reviewer rejects the post, their reason is stored here
     reject_reason = Column(String(500), nullable=True)
 
+    # ── A/B Headline Testing ──────────────────────────────────────────────
+    # An AI-generated alternative headline for the first story.
+    # Shown in the review message as "Option B".
+    # Cleared once the reviewer uses it or edits the post.
+    headline_b = Column(Text, nullable=True)
+
     # ── Relationship ──────────────────────────────────────────────────────
     # Links back to the parent Article object
     article = relationship("Article", back_populates="posts")

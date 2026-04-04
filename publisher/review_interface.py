@@ -110,15 +110,19 @@ def _get_reviewer_chat_id(bot_id: str) -> str:
 # When a button is tapped, Telegram sends back "callback data".
 # We use these prefixes to know which button was tapped and for which post.
 # e.g. "approve_5" means the Approve button was tapped for post ID 5.
-APPROVE_PREFIX = "approve_"
-REJECT_PREFIX  = "reject_"
-SOURCES_PREFIX = "sources_"
+APPROVE_PREFIX      = "approve_"
+REJECT_PREFIX       = "reject_"
+SOURCES_PREFIX      = "sources_"
+USE_HEADLINE_B_PREFIX = "use_b_"   # Swap in the alternative headline (A/B test)
 
-# ── State tracking for multi-step reject flow ──────────────────────────────
+# ── State tracking for multi-step flows ───────────────────────────────────
 # When reviewer taps Reject, we need to ask for a reason.
-# This dict tracks which post is awaiting a reject reason from the reviewer.
 # Key: reviewer's chat_id, Value: post_id waiting for reject reason
 _awaiting_reject_reason: dict = {}
+
+# When reviewer types /edit, we need to wait for their edit instruction.
+# Key: reviewer's chat_id, Value: post_id to be edited
+_awaiting_edit_instruction: dict = {}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -191,12 +195,28 @@ async def _send_review_message(post: Post) -> bool:
         f"{'─' * 35}\n\n"
     )
 
-    full_message = _to_html(review_header + post.content)
+    # Append alt headline note if one was generated
+    content_with_ab = post.content
+    if headline_b:
+        content_with_ab += (
+            f"\n\n{'─' * 35}\n"
+            f"💡 <b>Alt Headline (B):</b> <i>{headline_b}</i>\n"
+            f"<i>Tap \"📝 Use Alt Headline (B)\" to swap it in before approving.</i>"
+        )
+
+    full_message = _to_html(review_header) + content_with_ab
+
+    # ── Load headline_b from DB (for A/B testing) ─────────────────────────
+    headline_b = None
+    with get_session() as session:
+        db_post = session.query(Post).filter(Post.id == post.id).first()
+        if db_post:
+            headline_b = db_post.headline_b
 
     # ── Build inline buttons ───────────────────────────────────────────────
     # InlineKeyboardButton creates a clickable button in the chat.
     # callback_data is what gets sent back when the button is tapped.
-    keyboard = InlineKeyboardMarkup([
+    keyboard_rows = [
         [
             InlineKeyboardButton(
                 "✅ Approve",
@@ -213,7 +233,18 @@ async def _send_review_message(post: Post) -> bool:
                 callback_data=f"{SOURCES_PREFIX}{post.id}"
             ),
         ],
-    ])
+    ]
+
+    # Add "Use Alt Headline" button if an alternative was generated
+    if headline_b:
+        keyboard_rows.append([
+            InlineKeyboardButton(
+                "📝 Use Alt Headline (B)",
+                callback_data=f"{USE_HEADLINE_B_PREFIX}{post.id}"
+            ),
+        ])
+
+    keyboard = InlineKeyboardMarkup(keyboard_rows)
 
     # ── Send the message ───────────────────────────────────────────────────
     try:
@@ -236,7 +267,7 @@ async def _send_review_message(post: Post) -> bool:
                 # Send full post content + buttons as a follow-up text message
                 await bot.send_message(
                     chat_id=reviewer_chat_id,
-                    text=_to_html(post.content),
+                    text=content_with_ab,
                     parse_mode=ParseMode.HTML,
                     reply_markup=keyboard,
                 )
@@ -545,6 +576,146 @@ def _run_generation(bot_id: str) -> "Post | None":
         return generate_and_save_post(articles[0], bot_id)
 
 
+def _swap_first_headline(content: str, new_headline: str) -> str:
+    """
+    Replaces the first story's bold headline in a digest post.
+
+    Finds the line starting with 1️⃣ and swaps the text between
+    the first pair of asterisks (*...*) with new_headline.
+
+    Args:
+        content (str):      Full post text.
+        new_headline (str): Replacement headline text (no asterisks).
+
+    Returns:
+        str: Updated post content with the headline swapped.
+    """
+    import re
+    lines = content.split('\n')
+    for i, line in enumerate(lines):
+        if line.strip().startswith('1️⃣'):
+            # Replace text between first *...* pair on this line
+            lines[i] = re.sub(
+                r'\*([^*\n]+)\*',
+                lambda m: f'*{new_headline}*',
+                line,
+                count=1
+            )
+            break
+    return '\n'.join(lines)
+
+
+async def cmd_edit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    /edit [post_id] — Edits a pending post using a natural language instruction.
+
+    Opens an edit session for the specified post (or the most recent pending
+    post if no ID is given). The reviewer then types what they want changed
+    — Gemini applies the edit and re-sends the post for review.
+
+    Usage:
+      /edit        → edit the most recent pending post for this bot
+      /edit 27     → edit post #27
+
+    After typing /edit, the bot asks: "What would you like to change?"
+    The reviewer can then type e.g.:
+      "Make the headline more dramatic"
+      "Shorten the remedy section"
+      "Change 'GPT-5' to 'OpenAI's latest model'"
+    """
+    chat_id = update.message.chat_id
+    bot_id  = context.bot_data.get("bot_id", "ai_news")
+
+    # Resolve post_id — from argument or most recent pending
+    post_id = None
+    if context.args:
+        try:
+            post_id = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text("Usage: /edit <post_id>\nExample: /edit 27")
+            return
+    else:
+        with get_session() as session:
+            post = (
+                session.query(Post)
+                .filter_by(bot_id=bot_id, status="pending_review")
+                .order_by(Post.created_at.desc())
+                .first()
+            )
+            if post:
+                post_id = post.id
+
+    if not post_id:
+        await update.message.reply_text(
+            "No pending posts found to edit.\n"
+            "Use /edit <post_id> to edit a specific post."
+        )
+        return
+
+    # Fetch and show a preview of the post
+    with get_session() as session:
+        post = session.query(Post).filter(Post.id == post_id).first()
+        if not post:
+            await update.message.reply_text(f"Post {post_id} not found.")
+            return
+        preview = post.content[:200]
+
+    # Set state — next text message from this chat will be the edit instruction
+    _awaiting_edit_instruction[chat_id] = post_id
+
+    await update.message.reply_text(
+        f"✏️ *Editing post {post_id}*\n\n"
+        f"_{preview}..._\n\n"
+        f"What would you like to change? Type your instruction:",
+        parse_mode=ParseMode.MARKDOWN
+    )
+
+
+def _apply_edit_sync(post_id: int, instruction: str) -> "Post | None":
+    """
+    Synchronous helper — applies an edit instruction to a post via Gemini.
+
+    Designed to be called via asyncio.run_in_executor() so the blocking
+    API call doesn't freeze the Telegram event loop.
+
+    Args:
+        post_id (int):     ID of the post to edit.
+        instruction (str): Free-text description of what to change.
+
+    Returns:
+        Post:  The updated Post object with new content.
+        None:  If the post was not found or the API call failed.
+    """
+    from generator.claude_client import apply_edit_instruction
+
+    # Read current content
+    current_content = None
+    bot_id = None
+    with get_session() as session:
+        post = session.query(Post).filter(Post.id == post_id).first()
+        if not post:
+            return None
+        current_content = post.content
+        bot_id = post.bot_id
+
+    # Generate edited content (blocking API call)
+    new_content = apply_edit_instruction(current_content, instruction, bot_id)
+    if not new_content:
+        return None
+
+    # Save updated content to DB
+    with get_session() as session:
+        post = session.query(Post).filter(Post.id == post_id).first()
+        if not post:
+            return None
+        post.content    = new_content
+        post.headline_b = None   # Clear alt headline — content has changed
+        session.flush()
+        session.expunge(post)
+
+    return post
+
+
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     /help — Shows all available reviewer commands.
@@ -553,12 +724,14 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "🤖 *AI News Bot — Reviewer Commands*\n\n"
         "/generate `[bot_id]` — Generate a new post now\n"
         "     e.g. /generate bollywood\n\n"
+        "/edit `[post_id]` — Edit a post before approving\n"
+        "     e.g. /edit 27  (or just /edit for latest)\n\n"
         "/pending — List all posts waiting for review\n"
         "/preview `<id>` — Show full post content\n"
         "/sources `<id>` — Show original source article\n"
         "/skip `<id>` — Skip this post (no publish)\n"
         "/help — Show this help message\n\n"
-        "_Tap ✅ Approve / ❌ Reject on any post to act on it._"
+        "_Tap ✅ Approve / ❌ Reject / 📝 Use Alt Headline on any post._"
     )
     await update.message.reply_text(help_text, parse_mode=ParseMode.MARKDOWN)
 
@@ -632,6 +805,37 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             chat_id=chat_id, text=msg, parse_mode=ParseMode.HTML
         )
 
+    # ── Use Alt Headline (B) button ────────────────────────────────────────
+    elif data.startswith(USE_HEADLINE_B_PREFIX):
+        post_id = int(data[len(USE_HEADLINE_B_PREFIX):])
+
+        updated_post = None
+        with get_session() as session:
+            post = session.query(Post).filter(Post.id == post_id).first()
+            if not post or not post.headline_b:
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="⚠️ Alt headline no longer available for this post."
+                )
+                return
+            # Swap the first story's headline in the post content
+            post.content  = _swap_first_headline(post.content, post.headline_b)
+            post.headline_b = None   # Clear — used it, no longer needed
+            session.flush()
+            session.expunge(post)
+            updated_post = post
+
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"✅ Headline swapped to Option B for post {post_id}.\nSending updated post for review..."
+        )
+        await _send_review_message(updated_post)
+
 
 async def _handle_approve(query, post_id: int) -> None:
     """
@@ -701,20 +905,47 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     chat_id = update.message.chat_id
     text    = update.message.text.strip()
 
-    # Check if we're waiting for a reject reason for this reviewer
+    # ── Edit instruction flow ──────────────────────────────────────────────
+    if chat_id in _awaiting_edit_instruction:
+        post_id = _awaiting_edit_instruction.pop(chat_id)
+        status_msg = await update.message.reply_text(
+            f"⏳ Applying edit to post {post_id}...\nCalling AI — takes ~20–40 seconds."
+        )
+        try:
+            loop = asyncio.get_event_loop()
+            updated_post = await loop.run_in_executor(None, _apply_edit_sync, post_id, text)
+
+            if not updated_post:
+                await status_msg.edit_text(
+                    f"❌ Edit failed for post {post_id}.\n"
+                    f"Possible reasons: API rate limit, or post not found.\n"
+                    f"Check logs for details."
+                )
+                return
+
+            await status_msg.edit_text(
+                f"✅ Edit applied to post {post_id}.\nSending updated post for review..."
+            )
+            await _send_review_message(updated_post)
+
+        except Exception as e:
+            logger.error("Edit flow failed for post %d: %s", post_id, str(e))
+            await status_msg.edit_text(f"❌ Edit failed with error:\n{str(e)[:300]}")
+        return
+
+    # ── Reject reason flow ────────────────────────────────────────────────
     if chat_id in _awaiting_reject_reason:
-        post_id = _awaiting_reject_reason.pop(chat_id)  # Remove from waiting state
+        post_id = _awaiting_reject_reason.pop(chat_id)
         _reject_post(post_id, reason=text)
         await update.message.reply_text(
             f"❌ Post {post_id} rejected.\nReason: _{text}_",
             parse_mode=ParseMode.HTML
         )
         logger.info("Post %d rejected by reviewer. Reason: %s", post_id, text)
-    else:
-        # Not a command, not a reject reason — show help
-        await update.message.reply_text(
-            "Use /help to see available commands.",
-        )
+        return
+
+    # Not a command, not in any flow — show help
+    await update.message.reply_text("Use /help to see available commands.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -785,6 +1016,7 @@ def build_review_bot(bot_id: str = "ai_news") -> Application:
     # Register command handlers
     # Each handler listens for a specific /command from the reviewer
     app.add_handler(CommandHandler("generate", cmd_generate))
+    app.add_handler(CommandHandler("edit",     cmd_edit))
     app.add_handler(CommandHandler("pending",  cmd_pending))
     app.add_handler(CommandHandler("preview",  cmd_preview))
     app.add_handler(CommandHandler("sources",  cmd_sources))
