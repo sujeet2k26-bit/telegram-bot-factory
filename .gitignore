@@ -36,5 +36,8 @@ Thumbs.db
 *.tmp
 *.temp
 
+# Generated image cards — runtime output, not source code
+cards/
+
 # Claude Code local settings
 .claude/
