@@ -899,33 +899,30 @@ async def cmd_killstale(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     failed = []
 
     try:
-        # List all Python processes — output format: "python.exe","PID","..."
+        # Use PowerShell Get-Process for clean, unambiguous PID output.
+        # tasklist CSV parsing is fragile on some Windows locales due to quoting
+        # and number formatting differences. PowerShell returns one integer PID
+        # per line with no formatting — safe to parse directly.
         result = subprocess.run(
-            ["tasklist", "/FI", "IMAGENAME eq python.exe", "/FO", "CSV", "/NH"],
+            [
+                "powershell", "-NoProfile", "-Command",
+                "Get-Process python,python3 -ErrorAction SilentlyContinue"
+                " | Select-Object -ExpandProperty Id"
+            ],
             capture_output=True, text=True, timeout=10
         )
-        lines = result.stdout.strip().splitlines()
-
-        # Also catch python3.exe if present
-        result3 = subprocess.run(
-            ["tasklist", "/FI", "IMAGENAME eq python3.exe", "/FO", "CSV", "/NH"],
-            capture_output=True, text=True, timeout=10
-        )
-        lines += result3.stdout.strip().splitlines()
 
         pids_to_kill = []
-        for line in lines:
-            line = line.strip().strip('"')
-            if not line or line.startswith("INFO"):
+        for line in result.stdout.strip().splitlines():
+            line = line.strip()
+            if not line:
                 continue
-            parts = [p.strip().strip('"') for p in line.split('","')]
-            if len(parts) >= 2:
-                try:
-                    pid = int(parts[1])
-                    if pid != my_pid:
-                        pids_to_kill.append(pid)
-                except ValueError:
-                    continue
+            try:
+                pid = int(line)
+                if pid != my_pid:
+                    pids_to_kill.append(pid)
+            except ValueError:
+                continue
 
         if not pids_to_kill:
             await update.message.reply_text(
