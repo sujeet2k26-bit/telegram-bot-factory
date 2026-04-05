@@ -149,7 +149,7 @@ def get_bot_credentials(bot_id: str) -> tuple:
     return token, channel_id
 
 
-def _build_short_caption(text: str) -> str:
+def _build_short_caption(text: str, bot_id: str = "ai_news") -> str:
     """
     Builds a short image caption from the post text when the full text
     exceeds Telegram's 1024-character caption limit.
@@ -159,12 +159,14 @@ def _build_short_caption(text: str) -> str:
 
     Strategy:
       - Header line with TODAY's date (built fresh, not from post content)
-      - First story headline extracted from the post (starts with 1️⃣)
-      - Hashtags
-      - A nudge so subscribers know the full digest follows below
+      - First story headline extracted from the post (starts with 1️⃣),
+        or first content line for astrology posts
+      - Bot-appropriate hashtags
+      - A nudge so subscribers know the full content follows below
 
     Args:
-        text (str): The full post text.
+        text (str):    The full post text.
+        bot_id (str):  The bot ID — controls header, hashtags, and nudge text.
 
     Returns:
         str: A caption under 1024 characters.
@@ -175,26 +177,50 @@ def _build_short_caption(text: str) -> str:
     IST = timezone(timedelta(hours=5, minutes=30))
     today = datetime.now(IST).strftime("%B %d, %Y")
 
-    # Build a fresh header — never rely on the date baked into the stored content
-    caption = f"📰 *AI News Daily — {today}*"
+    if bot_id == "astrology":
+        # Astrology post starts with 🌙 — use the first two lines as the caption
+        caption = f"🌙 *Aaj ka Panchang — {today}*"
+        for line in text.splitlines():
+            line = line.strip()
+            if line and not line.startswith("🌙"):
+                # Include the nakshatra/yoga subtitle line if present
+                candidate = f"{caption}\n{line}"
+                if len(candidate) <= 900:
+                    caption = candidate
+                break
+        caption += "\n\n👇 Full post below"
 
-    # Extract the first story headline from the post body (line starting with 1️⃣)
-    for line in text.splitlines():
-        line = line.strip()
-        if line.startswith("1️⃣"):
-            # Clean up any triple-asterisk markdown Gemini sometimes adds (***text***)
-            clean_line = line.replace("***", "*")
-            candidate = f"{caption}\n{clean_line}"
-            if len(candidate) <= 900:
-                caption = candidate
-            break
+    elif bot_id == "bollywood":
+        caption = f"🎬 *Bollywood Buzz Daily — {today}*"
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith("1️⃣"):
+                clean_line = line.replace("***", "*")
+                candidate = f"{caption}\n{clean_line}"
+                if len(candidate) <= 900:
+                    caption = candidate
+                break
+        caption += "\n\n#Bollywood #BollywoodNews\n👇 Full digest below"
 
-    caption += "\n\n#AINews #TechUpdate\n👇 Full digest below"
+    else:
+        # Default: AI News
+        caption = f"📰 *AI News Daily — {today}*"
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith("1️⃣"):
+                clean_line = line.replace("***", "*")
+                candidate = f"{caption}\n{clean_line}"
+                if len(candidate) <= 900:
+                    caption = candidate
+                break
+        caption += "\n\n#AINews #TechUpdate\n👇 Full digest below"
+
     return caption
 
 
 async def _send_with_image(bot: Bot, channel_id: str,
-                            text: str, image_url: str) -> bool:
+                            text: str, image_url: str,
+                            bot_id: str = "ai_news") -> bool:
     """
     Sends a Telegram message with a photo and caption.
 
@@ -207,13 +233,24 @@ async def _send_with_image(bot: Bot, channel_id: str,
         channel_id (str):  The channel to post to (e.g. "@AINewsDaily").
         text (str):        The post text (caption for the image).
         image_url (str):   The URL of the cover image to send.
+        bot_id (str):      The bot ID — used to build the correct short caption.
 
     Returns:
         bool: True if the message was sent successfully, False on error.
     """
     try:
+        # Astrology posts always send image first, then full text as a separate
+        # message — no teaser caption needed since the post is a single cohesive
+        # panchang reading (not a digest with a headline to preview).
+        if bot_id == "astrology":
+            await bot.send_photo(chat_id=channel_id, photo=image_url)
+            await bot.send_message(
+                chat_id=channel_id,
+                text=_to_html(text),
+                parse_mode=ParseMode.HTML,
+            )
         # Telegram captions have a 1024-character limit
-        if len(text) <= 1024:
+        elif len(text) <= 1024:
             # Short enough — use full text as caption directly under the image
             await bot.send_photo(
                 chat_id=channel_id,
@@ -225,7 +262,7 @@ async def _send_with_image(bot: Bot, channel_id: str,
             # Text too long for a caption — build a short teaser caption from
             # the first 2 lines of the post (header + first story headline),
             # then send the full text as a follow-up message.
-            short_caption = _build_short_caption(text)
+            short_caption = _build_short_caption(text, bot_id)
             await bot.send_photo(
                 chat_id=channel_id,
                 photo=image_url,
@@ -310,7 +347,7 @@ async def _publish_post_async(post: Post) -> bool:
 
     if post.image_url:
         # Try sending with image first
-        success = await _send_with_image(bot, channel_id, post.content, post.image_url)
+        success = await _send_with_image(bot, channel_id, post.content, post.image_url, bot_id)
 
         if not success:
             # Image send failed — fall back to text only

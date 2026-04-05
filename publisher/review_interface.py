@@ -86,6 +86,29 @@ def _get_bot_token(bot_id: str) -> str:
     return token
 
 
+def _get_channel_id(bot_id: str) -> str:
+    """
+    Returns the Telegram channel ID for the given bot_id.
+
+    Used when publishing content directly to the channel (e.g. image cards).
+
+    Args:
+        bot_id (str): The bot ID, e.g. "ai_news", "bollywood", or "astrology".
+
+    Returns:
+        str: The channel ID string (e.g. "@astrochhayah").
+    """
+    channel_map = {
+        "ai_news":   settings.TELEGRAM_AI_CHANNEL_ID,
+        "bollywood": settings.TELEGRAM_BOLLYWOOD_CHANNEL_ID,
+        "astrology": settings.TELEGRAM_ASTROLOGY_CHANNEL_ID,
+    }
+    channel_id = channel_map.get(bot_id)
+    if not channel_id:
+        raise ValueError(f"No channel ID found for bot_id='{bot_id}'. Check your .env file.")
+    return channel_id
+
+
 def _get_reviewer_chat_id(bot_id: str) -> str:
     """
     Returns the reviewer Telegram chat ID for the given bot_id.
@@ -151,7 +174,11 @@ def send_for_review(post: Post) -> bool:
         return loop.run_until_complete(_send_review_message(post))
 
 
-async def _send_review_message(post: Post) -> bool:
+async def _send_review_message(
+    post: Post,
+    override_bot=None,
+    override_chat_id=None,
+) -> bool:
     """
     Async implementation of send_for_review.
 
@@ -159,12 +186,19 @@ async def _send_review_message(post: Post) -> bool:
     then sends it to the reviewer's private chat.
 
     Args:
-        post (Post): The post to send for review.
+        post (Post):          The post to send for review.
+        override_bot:         Optional Bot instance to use instead of the post's own bot token.
+                              Pass context.bot from cmd_generate so the message goes through
+                              the bot the reviewer is already talking to (avoids 403 errors
+                              when reviewing cross-bot posts from a single reviewer chat).
+        override_chat_id:     Optional chat ID to send to instead of the default reviewer chat.
+                              Pass update.effective_chat.id from cmd_generate so the reply
+                              arrives in the same chat where /generate was typed.
 
     Returns:
         bool: True if sent successfully.
     """
-    reviewer_chat_id = _get_reviewer_chat_id(post.bot_id)
+    reviewer_chat_id = override_chat_id or _get_reviewer_chat_id(post.bot_id)
     if not reviewer_chat_id:
         logger.error("No reviewer chat ID set for bot '%s' — cannot send for review.", post.bot_id)
         return False
@@ -195,8 +229,19 @@ async def _send_review_message(post: Post) -> bool:
         f"{'─' * 35}\n\n"
     )
 
+    # ── Load headline_b from DB (for A/B testing) ─────────────────────────
+    headline_b = None
+    with get_session() as session:
+        db_post = session.query(Post).filter(Post.id == post.id).first()
+        if db_post:
+            headline_b = db_post.headline_b
+
+    # Convert post content markdown to HTML so bold/italic render correctly
+    # in the reviewer's Telegram chat (same conversion applied on publish).
+    content_html = _to_html(post.content)
+
     # Append alt headline note if one was generated
-    content_with_ab = post.content
+    content_with_ab = content_html
     if headline_b:
         content_with_ab += (
             f"\n\n{'─' * 35}\n"
@@ -205,13 +250,6 @@ async def _send_review_message(post: Post) -> bool:
         )
 
     full_message = _to_html(review_header) + content_with_ab
-
-    # ── Load headline_b from DB (for A/B testing) ─────────────────────────
-    headline_b = None
-    with get_session() as session:
-        db_post = session.query(Post).filter(Post.id == post.id).first()
-        if db_post:
-            headline_b = db_post.headline_b
 
     # ── Build inline buttons ───────────────────────────────────────────────
     # InlineKeyboardButton creates a clickable button in the chat.
@@ -248,10 +286,15 @@ async def _send_review_message(post: Post) -> bool:
 
     # ── Send the message ───────────────────────────────────────────────────
     try:
-        # Use the posting bot's own token so that callbacks (Approve/Reject)
-        # are routed back to the correct bot when the reviewer taps a button.
-        token = _get_bot_token(post.bot_id)
-        bot   = Bot(token=token)
+        # Use override_bot if provided (e.g. from cmd_generate, so the message
+        # arrives via the bot the reviewer is already chatting with).
+        # Otherwise fall back to the post's own bot token — used by the scheduler
+        # where each bot sends its own review messages.
+        if override_bot is not None:
+            bot = override_bot
+        else:
+            token = _get_bot_token(post.bot_id)
+            bot   = Bot(token=token)
 
         if post.image_url:
             # Try to send the cover image. Image URLs from the generation API
@@ -376,7 +419,7 @@ async def cmd_preview(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     ])
 
     await update.message.reply_text(
-        f"*Post ID {post.id}* | Status: `{post.status}`\n\n{post.content}",
+        f"<b>Post ID {post.id}</b> | Status: <code>{post.status}</code>\n\n{_to_html(post.content)}",
         parse_mode=ParseMode.HTML,
         reply_markup=keyboard,
     )
@@ -504,8 +547,16 @@ async def cmd_generate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 )
             return
 
-        # Post generated — send it to this chat for review (with Approve/Reject buttons)
-        sent = await _send_review_message(post)
+        # Post generated — send it to THIS chat for review (with Approve/Reject buttons).
+        # Pass context.bot + current chat_id so the message is delivered through the
+        # bot the reviewer is already talking to, regardless of which bot owns the post.
+        # This avoids 403 Forbidden errors when generating cross-bot posts (e.g. typing
+        # /generate bollywood in the astrology reviewer chat).
+        sent = await _send_review_message(
+            post,
+            override_bot=context.bot,
+            override_chat_id=update.effective_chat.id,
+        )
 
         if sent:
             await status_msg.edit_text(
@@ -716,6 +767,200 @@ def _apply_edit_sync(post_id: int, instruction: str) -> "Post | None":
     return post
 
 
+async def cmd_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    /card [full] — Generates a shareable image card and publishes it to @astrochhayah.
+
+    Only works for the astrology bot (card feature is astrology-only).
+    Uses the most recently published or pending_review astrology post.
+
+    Usage:
+      /card        → 1080x1350 Instagram/Facebook-compatible card (default)
+      /card full   → Full auto-height card (all content, best for WhatsApp)
+
+    Steps:
+      1. Fetch latest astrology post from DB
+      2. Generate the image card
+      3. Publish to @astrochhayah channel
+      4. Send preview to this reviewer chat
+    """
+    bot_id  = context.bot_data.get("bot_id", "astrology")
+    chat_id = update.effective_chat.id
+
+    if bot_id != "astrology":
+        await update.message.reply_text(
+            "⚠️ /card is only available for the Astrology bot.\n"
+            "Run the review bot with `python test_review_interface.py astrology`."
+        )
+        return
+
+    status_msg = await update.message.reply_text("🎨 Generating image card...")
+
+    try:
+        # ── Fetch the latest astrology post ───────────────────────────────────
+        with get_session() as session:
+            post = (
+                session.query(Post)
+                .filter(
+                    Post.bot_id == "astrology",
+                    Post.status.in_(["published", "pending_review", "approved"])
+                )
+                .order_by(Post.id.desc())
+                .first()
+            )
+            if not post:
+                await status_msg.edit_text("❌ No astrology post found. Run /generate first.")
+                return
+
+            post_id   = post.id
+            image_url = post.image_url
+            content   = post.content
+            summary   = post.article.summary if post.article else ""
+
+        if not image_url:
+            await status_msg.edit_text(
+                f"❌ Post {post_id} has no image URL. Cannot generate card."
+            )
+            return
+
+        # ── Generate card in thread executor (download + Pillow = blocking) ───
+        use_full  = context.args and context.args[0].lower() == "full"
+        loop      = asyncio.get_event_loop()
+
+        import importlib, generator.image_card as _ic_mod
+        importlib.reload(_ic_mod)
+
+        if use_full:
+            card_path = await loop.run_in_executor(
+                None, _ic_mod.generate_astrology_card, image_url, content, summary
+            )
+        else:
+            card_path = await loop.run_in_executor(
+                None, _ic_mod.generate_social_card, image_url, content, summary
+            )
+
+        if not card_path:
+            await status_msg.edit_text(
+                "❌ Card generation failed. Check logs for details."
+            )
+            return
+
+        # ── Publish card to @astrochhayah channel ─────────────────────────────
+        token      = _get_bot_token(bot_id)
+        channel_id = _get_channel_id(bot_id)
+        pub_bot    = Bot(token=token)
+
+        with open(card_path, "rb") as f:
+            channel_msg = await pub_bot.send_photo(
+                chat_id=channel_id,
+                photo=f,
+            )
+
+        logger.info(
+            "cmd_card: Card published to %s (message_id=%d, post_id=%d)",
+            channel_id, channel_msg.message_id, post_id,
+        )
+
+        # ── Send preview to reviewer chat ──────────────────────────────────────
+        await status_msg.edit_text(
+            f"✅ Card published to {channel_id}!\n"
+            f"Post ID: {post_id} | Message ID: {channel_msg.message_id}\n\n"
+            f"Preview sent below 👇"
+        )
+
+        with open(card_path, "rb") as f:
+            await context.bot.send_photo(chat_id=chat_id, photo=f)
+
+    except Exception as e:
+        logger.error("cmd_card failed: %s", e)
+        await status_msg.edit_text(f"❌ Error generating card: {e}")
+
+
+async def cmd_killstale(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    /killstale — Kills all stale Python processes except this one.
+
+    Use this when /card or /generate freeze or fail due to a ghost process
+    (e.g. a previous main.py run that wasn't cleanly stopped).
+
+    What it does:
+      1. Lists all running python.exe / python3.exe processes on this machine.
+      2. Excludes the current process (the one running this bot).
+      3. Force-kills all others.
+      4. Reports what was killed.
+
+    After running /killstale, retry /card or /generate.
+    """
+    import os
+    import subprocess
+
+    my_pid = os.getpid()
+    killed = []
+    failed = []
+
+    try:
+        # List all Python processes — output format: "python.exe","PID","..."
+        result = subprocess.run(
+            ["tasklist", "/FI", "IMAGENAME eq python.exe", "/FO", "CSV", "/NH"],
+            capture_output=True, text=True, timeout=10
+        )
+        lines = result.stdout.strip().splitlines()
+
+        # Also catch python3.exe if present
+        result3 = subprocess.run(
+            ["tasklist", "/FI", "IMAGENAME eq python3.exe", "/FO", "CSV", "/NH"],
+            capture_output=True, text=True, timeout=10
+        )
+        lines += result3.stdout.strip().splitlines()
+
+        pids_to_kill = []
+        for line in lines:
+            line = line.strip().strip('"')
+            if not line or line.startswith("INFO"):
+                continue
+            parts = [p.strip().strip('"') for p in line.split('","')]
+            if len(parts) >= 2:
+                try:
+                    pid = int(parts[1])
+                    if pid != my_pid:
+                        pids_to_kill.append(pid)
+                except ValueError:
+                    continue
+
+        if not pids_to_kill:
+            await update.message.reply_text(
+                f"No stale Python processes found.\n"
+                f"(Current PID: {my_pid})"
+            )
+            return
+
+        # Kill each stale PID
+        for pid in pids_to_kill:
+            try:
+                subprocess.run(
+                    ["taskkill", "/PID", str(pid), "/F"],
+                    capture_output=True, timeout=5
+                )
+                killed.append(pid)
+                logger.info("cmd_killstale: killed PID %d", pid)
+            except Exception as e:
+                failed.append((pid, str(e)))
+                logger.warning("cmd_killstale: failed to kill PID %d: %s", pid, e)
+
+        lines_out = [f"Killed {len(killed)} stale process(es). Current PID: {my_pid}\n"]
+        if killed:
+            lines_out.append("Stopped: " + ", ".join(str(p) for p in killed))
+        if failed:
+            lines_out.append("Failed: " + ", ".join(f"{p}({e})" for p, e in failed))
+        lines_out.append("\nYou can now retry /card or /generate.")
+
+        await update.message.reply_text("\n".join(lines_out))
+
+    except Exception as e:
+        logger.error("cmd_killstale failed: %s", e)
+        await update.message.reply_text(f"Error running killstale: {e}")
+
+
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     /help — Shows all available reviewer commands.
@@ -724,12 +969,15 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "🤖 *AI News Bot — Reviewer Commands*\n\n"
         "/generate `[bot_id]` — Generate a new post now\n"
         "     e.g. /generate bollywood\n\n"
+        "/card — Instagram/Facebook card (astrology only)\n"
+        "/card full — Full WhatsApp card (all content, auto-height)\n\n"
         "/edit `[post_id]` — Edit a post before approving\n"
         "     e.g. /edit 27  (or just /edit for latest)\n\n"
         "/pending — List all posts waiting for review\n"
         "/preview `<id>` — Show full post content\n"
         "/sources `<id>` — Show original source article\n"
         "/skip `<id>` — Skip this post (no publish)\n"
+        "/killstale — Kill stale Python processes (fix 409/freeze issues)\n"
         "/help — Show this help message\n\n"
         "_Tap ✅ Approve / ❌ Reject / 📝 Use Alt Headline on any post._"
     )
@@ -865,8 +1113,14 @@ async def _handle_approve(query, post_id: int) -> None:
 
     logger.info("Post %d approved by reviewer.", post_id)
 
-    # Remove the inline buttons from the review message
-    await query.edit_message_reply_markup(reply_markup=None)
+    # Remove the inline buttons from the review message.
+    # Wrapped in try/except because Telegram can reject edits on old messages
+    # (e.g. message too old, or a network hiccup) — this must not abort the approval.
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except TelegramError as e:
+        logger.warning("Could not remove buttons from review message (post %d): %s", post_id, e)
+
     await query.message.reply_text(f"✅ Post {post_id} approved — publishing now...")
 
     # Re-fetch after commit so publish_post sees the updated status
@@ -1015,14 +1269,16 @@ def build_review_bot(bot_id: str = "ai_news") -> Application:
 
     # Register command handlers
     # Each handler listens for a specific /command from the reviewer
-    app.add_handler(CommandHandler("generate", cmd_generate))
-    app.add_handler(CommandHandler("edit",     cmd_edit))
-    app.add_handler(CommandHandler("pending",  cmd_pending))
-    app.add_handler(CommandHandler("preview",  cmd_preview))
-    app.add_handler(CommandHandler("sources",  cmd_sources))
-    app.add_handler(CommandHandler("skip",     cmd_skip))
-    app.add_handler(CommandHandler("help",     cmd_help))
-    app.add_handler(CommandHandler("start",    cmd_help))  # /start shows help too
+    app.add_handler(CommandHandler("generate",  cmd_generate))
+    app.add_handler(CommandHandler("card",      cmd_card))
+    app.add_handler(CommandHandler("edit",      cmd_edit))
+    app.add_handler(CommandHandler("pending",   cmd_pending))
+    app.add_handler(CommandHandler("preview",   cmd_preview))
+    app.add_handler(CommandHandler("sources",   cmd_sources))
+    app.add_handler(CommandHandler("skip",      cmd_skip))
+    app.add_handler(CommandHandler("killstale", cmd_killstale))
+    app.add_handler(CommandHandler("help",      cmd_help))
+    app.add_handler(CommandHandler("start",     cmd_help))  # /start shows help too
 
     # Register inline button handler
     app.add_handler(CallbackQueryHandler(handle_button))

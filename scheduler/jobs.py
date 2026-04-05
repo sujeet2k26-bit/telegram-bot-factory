@@ -588,38 +588,55 @@ def _midday_batch(all_bots: list, full_day_bots: list) -> None:
 
 def start_review_bot_thread() -> threading.Thread:
     """
-    Starts the Telegram review bot in a background thread.
+    Starts Telegram review bots for all configured bots in separate threads.
 
-    The review bot needs to run continuously to listen for button taps
-    (Approve / Reject) from the reviewer. It uses python-telegram-bot's
-    polling mode which blocks the thread — so we run it in a separate thread.
-
-    The background thread runs as a daemon thread. This means:
-      - It runs alongside the main thread (scheduler).
-      - When the main program exits, the thread is automatically stopped.
-      - We don't need to manually stop it on shutdown.
+    Starts one review bot per bot_id so that each bot's reviewer can receive
+    Approve / Reject callbacks, /generate, and /card commands independently.
+    Active bots (ai_news, bollywood) AND inactive bots with a valid token
+    (e.g. astrology) all get a review thread so on-demand commands work.
 
     Returns:
-        threading.Thread: The started background thread running the review bot.
+        threading.Thread: The first started background thread (ai_news).
     """
     from publisher.review_interface import start_review_bot
+    from config.settings import settings
 
-    def run_review_bot():
-        """Target function for the background thread."""
-        logger.info("Review bot thread starting...")
-        try:
-            start_review_bot()
-        except Exception as e:
-            logger.error("Review bot thread crashed: %s", str(e), exc_info=True)
+    # Map bot_id → env var name that holds its token
+    # Add an entry here whenever a new bot is added
+    bot_token_map = {
+        "ai_news":   settings.TELEGRAM_AI_BOT_TOKEN,
+        "bollywood": settings.TELEGRAM_BOLLYWOOD_BOT_TOKEN,
+        "astrology": settings.TELEGRAM_ASTROLOGY_BOT_TOKEN,
+    }
 
-    thread = threading.Thread(
-        target=run_review_bot,
-        name="ReviewBotThread",
-        daemon=True,   # Daemon threads stop automatically when the main program exits
-    )
-    thread.start()
-    logger.info("Review bot started in background thread.")
-    return thread
+    first_thread = None
+    for bot_id, token in bot_token_map.items():
+        if not token:
+            logger.debug("Skipping review bot for '%s' — no token configured.", bot_id)
+            continue
+
+        def run_review_bot(bid=bot_id):
+            """Target function for the background thread."""
+            logger.info("Review bot thread starting for bot_id='%s'...", bid)
+            try:
+                start_review_bot(bid)
+            except Exception as e:
+                logger.error(
+                    "Review bot thread crashed (bot_id='%s'): %s", bid, str(e), exc_info=True
+                )
+
+        thread = threading.Thread(
+            target=run_review_bot,
+            name=f"ReviewBotThread-{bot_id}",
+            daemon=True,
+        )
+        thread.start()
+        logger.info("Review bot started for bot_id='%s'.", bot_id)
+
+        if first_thread is None:
+            first_thread = thread
+
+    return first_thread
 
 
 # ─────────────────────────────────────────────────────────────────────────────

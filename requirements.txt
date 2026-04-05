@@ -29,9 +29,15 @@ APScheduler==3.10.4
 # SQLAlchemy — makes it easy to read/write to the SQLite database
 SQLAlchemy>=2.0.36
 
-# HTML parsing — used by panchang_fetcher.py to scrape Drik Panchang
+# HTML parsing — used by panchang_fetcher.py to scrape panchang sites
 beautifulsoup4==4.14.3
 lxml==6.0.2
+
+# Astronomical calculations — computes Sun/Moon positions for accurate tithi/nakshatra
+ephem==4.1.6
+
+# Image compositing — used by generator/image_card.py to create shareable 1080x1080 panchang cards
+Pillow>=10.0.0
 
 # Hash utilities — used for deduplication (detecting duplicate articles)
 # (built into Python standard library — no install needed)

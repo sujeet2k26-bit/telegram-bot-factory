@@ -88,6 +88,17 @@ class Settings:
     # If not set, falls back to TELEGRAM_REVIEWER_CHAT_ID.
     TELEGRAM_ASTROLOGY_REVIEWER_CHAT_ID: str = os.getenv("TELEGRAM_ASTROLOGY_REVIEWER_CHAT_ID", "")
 
+    # ── Drik Panchang (session cookies for authenticated scraping) ────────
+    # Drik Panchang requires Google Sign-In. Copy these from your browser
+    # after logging in: DevTools → Application → Cookies → drikpanchang.com
+    # Both cookies expire in ~1 year — refresh when scraping starts failing.
+    DRIK_SESSION_ID: str = os.getenv("DRIK_SESSION_ID", "")
+    DRIK_ACCESS_TOKEN: str = os.getenv("DRIK_ACCESS_TOKEN", "")
+
+    # Geoname ID for panchang location (default: New Delhi = 1261481)
+    # Find your city's ID at: https://www.geonames.org/search.html
+    DRIK_GEONAME_ID: str = os.getenv("DRIK_GEONAME_ID", "1261481")
+
     # ── News API ───────────────────────────────────────────────────────────
     NEWS_API_KEY: str = os.getenv("NEWS_API_KEY", "")
 

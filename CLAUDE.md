@@ -61,6 +61,10 @@ Automated news aggregation and Telegram publishing system:
 - [x] Two separate bots + channels (AI News + Bollywood)
 - [x] Daily Astrology Bot — panchang scraping, Hinglish post, spiritual cover image
 - [x] Per-bot reviewer chat IDs (different Telegram accounts per bot)
+- [x] All 3 review bots auto-start on `python main.py` (one thread each)
+- [x] `/generate` cross-bot: works from any reviewer chat without 403 errors
+- [x] `/killstale` command — kills stale Python processes via Telegram
+- [x] Astrology social card: auto-height canvas, full text wrap (no truncation)
 
 ### Phase 2 — Enhanced
 - [ ] Reddit + NewsAPI virality signals
@@ -96,3 +100,6 @@ Automated news aggregation and Telegram publishing system:
 | Astrology data | Drik Panchang scrape + date fallback | No free API; BeautifulSoup parses tithi/nakshatra |
 | Astrology pipeline | Single article (not digest) | One panchang post per day, not a multi-story digest |
 | Per-bot reviewer | `TELEGRAM_<BOT>_REVIEWER_CHAT_ID` | Different Telegram accounts can review different bots |
+| Cross-bot `/generate` | Routes via `context.bot` + current `chat_id` | Avoids 403 Forbidden when generating AI/Bollywood posts from astrology reviewer chat |
+| `/killstale` | Kills all Python PIDs except current | One-tap fix for 409 Conflict / frozen `/card` or `/generate` without restarting server |
+| Social card height | Auto-calculated from dry run | Fixed content truncation — card grows to fit all bullet text |
