@@ -1,4 +1,4 @@
-# CLAUDE.md — AI & Bollywood News Bot
+# CLAUDE.md — Telegram Bot Factory
 
 Project index. Detailed rules live in the `rules/` folder.
 
@@ -6,12 +6,12 @@ Project index. Detailed rules live in the `rules/` folder.
 
 ## Project Overview
 
-Automated news aggregation and Telegram publishing system:
-- Fetches AI/tech and Bollywood news from trusted RSS sources
-- Scores articles for virality, applies diversity caps, selects top stories
-- Generates digest posts via Gemini 2.5 Pro (Euri API)
-- Routes every post through mandatory human review before publishing
-- Publishes via separate Telegram bots to separate channels
+Multi-bot publishing platform for Telegram. One shared backend drives any number of content bots across different domains and languages:
+- Each bot is defined entirely by a config entry in `bots.json` + one prompt file
+- Shared pipeline handles fetch → filter → score → generate → review → publish for every bot
+- Human review is mandatory — no post is ever published without explicit approval
+- Currently running: AI News (English), Bollywood (Hindi/Hinglish), Daily Astrology (Hindi/Hinglish)
+- Adding a new bot requires zero changes to core pipeline code
 
 ---
 

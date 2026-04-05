@@ -1,32 +1,34 @@
-# AI & Bollywood News Bot
+# Telegram Bot Factory
 
-Automated news aggregator that fetches AI/tech and Bollywood news, scores for virality, generates digest posts using Gemini AI, routes through human review, and publishes to Telegram channels.
+A multi-bot publishing platform that automates content aggregation, AI generation, human review, and Telegram channel publishing — all from a single shared backend.
 
----
-
-## What It Does
-
-1. **Fetches** articles from 30+ RSS sources every 6 hours (or scrapes Drik Panchang for astrology)
-2. **Filters** off-topic and unsafe content via guardrails
-3. **Scores** articles by recency, source credibility, and cross-source overlap — with source weight multipliers (official AI blogs score higher than community aggregators)
-4. **Selects** top 5 articles applying diversity caps: max 2 per source, max 2 per movie/topic, no duplicate titles
-5. **Generates** a daily digest post using Gemini 2.5 Pro + a cover image, with clickable **Read more** links for each story
-6. **Sends** the post to your private Telegram reviewer chat with ✅ Approve / ❌ Reject buttons
-7. **Publishes** to the correct channel immediately after you tap Approve
+Add any new domain in under 30 minutes: one config entry + one prompt file. The pipeline, scheduler, guardrails, and review interface work for every bot automatically.
 
 ---
 
-## Bots
+## How It Works
 
-| Bot | Channel | Language | Posts/Day | Status |
-|-----|---------|----------|-----------|--------|
-| AI News Bot | `@ai26news` | English | 1 digest (top 5) | Active |
-| Bollywood Buzz Bot | `@bollywood_daily_gossip` | Hindi/Hinglish | 2 digests (top 5 each) | Active |
-| Daily Astrology Bot | `@astrochhayah` | Hindi/Hinglish | 1 panchang post | Built, inactive |
+1. **Fetch** — RSS feeds or custom scrapers pull fresh content every few hours
+2. **Filter** — guardrails block unsafe, off-topic, or low-quality content
+3. **Score** — virality engine ranks articles by recency, source credibility, and cross-source overlap
+4. **Select** — diversity caps prevent any single source or topic from dominating
+5. **Generate** — Gemini 2.5 Pro writes a digest post + cover image via Euri API
+6. **Review** — post lands in your private Telegram chat with ✅ Approve / ❌ Reject buttons
+7. **Publish** — approved posts go live on the correct channel instantly
 
-Each bot uses its **own Telegram token** for publishing and for the review flow — tapping Approve on a Bollywood post always routes to the Bollywood bot.
+No post is ever published without explicit human approval.
 
-Each bot can also send review messages to a **different Telegram account** via per-bot reviewer chat IDs.
+---
+
+## Active Bots
+
+| Bot | Channel | Domain | Language | Posts/Day |
+|-----|---------|--------|----------|-----------|
+| AI News Bot | `@ai26news` | AI & Technology | English | 1 digest (top 5) |
+| Bollywood Buzz Bot | `@bollywood_daily_gossip` | Entertainment | Hindi/Hinglish | 2 digests (top 5 each) |
+| Daily Astrology Bot | `@astrochhayah` | Astrology/Panchang | Hindi/Hinglish | 1 panchang post |
+
+Each bot uses its own Telegram token and can route review messages to a different Telegram account via per-bot reviewer chat IDs.
 
 ---
 
@@ -40,10 +42,11 @@ Each bot can also send review messages to a **different Telegram account** via p
 
 ## Setup
 
-### 1. Clone and install dependencies
+### 1. Clone and install
 
 ```bash
-cd "AI News"
+git clone https://github.com/sujeet2k26-bit/telegram-bot-factory.git
+cd telegram-bot-factory
 pip install -r requirements.txt
 ```
 
@@ -71,22 +74,21 @@ TELEGRAM_BOLLYWOOD_CHANNEL_ID=@your_bollywood_channel
 TELEGRAM_ASTROLOGY_BOT_TOKEN=your_astrology_bot_token_here
 TELEGRAM_ASTROLOGY_CHANNEL_ID=@your_astrology_channel
 
-# Telegram — Reviewer (default: used by AI News + Bollywood)
-TELEGRAM_REVIEWER_CHAT_ID=123456789   # numeric ID only, not @username
+# Reviewer — default account (used by AI News + Bollywood)
+TELEGRAM_REVIEWER_CHAT_ID=123456789   # numeric ID, not @username
 
-# Telegram — Reviewer override for Astrology (optional — different account)
+# Reviewer — per-bot override (optional — routes to a different account)
 TELEGRAM_ASTROLOGY_REVIEWER_CHAT_ID=987654321
 ```
 
-> **How to get your reviewer chat ID:** Search for `@userinfobot` on Telegram and send it any message — it replies with your numeric chat ID.
+> **Get your reviewer chat ID:** Search `@userinfobot` on Telegram and send it any message — it replies with your numeric ID.
 
-> **Per-bot reviewer:** If you want astrology posts reviewed from a different Telegram account, set `TELEGRAM_ASTROLOGY_REVIEWER_CHAT_ID`. Leave it blank to use the same account as AI News and Bollywood.
+> **Per-bot reviewer:** Set `TELEGRAM_<BOT>_REVIEWER_CHAT_ID` to send that bot's review messages to a different Telegram account.
 
-### 3. Add bots as channel admins
+### 3. Add each bot as a channel admin
 
-Each bot must be an admin of its Telegram channel before it can post:
-1. Open your channel settings → Administrators
-2. Add the bot by its username
+1. Open the channel → Settings → Administrators
+2. Add the bot by username
 3. Grant **Post Messages** permission
 
 ### 4. Verify connection
@@ -97,19 +99,19 @@ python test_euri_connection.py
 
 ---
 
-## Running the Bot
+## Running
 
-### Option A — Full automated scheduler (production)
-
-Runs all pipeline jobs on a schedule (fetch at 6 AM IST, review at 7 AM, publish at 8 AM):
+### Production — full scheduler
 
 ```bash
 python main.py
 ```
 
-### Option B — Manual test run (development)
+Starts all bots. Fetches, scores, generates, and sends posts to your reviewer on the schedule below. All three review bots start automatically as background threads.
 
-Generates a fresh post for a specific bot, sends it to your reviewer chat, and waits for your Approve/Reject:
+### Development — manual test run
+
+Generate a fresh post for a specific bot, send it to your reviewer chat, and wait for Approve/Reject:
 
 ```bash
 python publisher/test_review_interface.py ai_news
@@ -117,53 +119,74 @@ python publisher/test_review_interface.py bollywood
 python publisher/test_review_interface.py astrology
 ```
 
-To run both news bots simultaneously (stagger by 8+ seconds to avoid Telegram conflicts):
-
-```bash
-python publisher/test_review_interface.py ai_news > logs/test_ai_news.log 2>&1 &
-sleep 8
-python publisher/test_review_interface.py bollywood > logs/test_bollywood.log 2>&1 &
-```
-
 ---
 
-## Individual Pipeline Scripts
+## Reviewer Commands
 
-| Script | What it does |
-|--------|-------------|
-| `python aggregator/test_fetch.py ai_news` | Fetch + save articles for AI News |
-| `python aggregator/test_fetch.py bollywood` | Fetch + save articles for Bollywood |
-| `python generator/test_generator.py` | Generate a post from the top scored article |
-| `python publisher/test_review_interface.py ai_news` | Full flow for AI News: generate → review → publish |
-| `python publisher/test_review_interface.py bollywood` | Full flow for Bollywood |
-| `python publisher/test_review_interface.py astrology` | Full flow for Astrology: fetch panchang → generate → review → publish |
-
----
-
-## Review Commands
-
-Once the review bot is running, send these commands in your Telegram reviewer chat:
+Send these from any reviewer Telegram chat while the bot is running:
 
 | Command | Action |
 |---------|--------|
-| `/generate` | Generate a new post for the current bot on demand |
-| `/generate bollywood` | Generate for a specific bot (ai_news / bollywood / astrology) |
+| `/generate` | Generate a new post for the current bot |
+| `/generate bollywood` | Generate for a specific bot (works from any reviewer chat) |
+| `/card` | Generate + publish an Instagram/Facebook image card (astrology) |
+| `/card full` | Full auto-height card for WhatsApp |
+| `/edit [id]` | Edit a post with a natural language instruction before approving |
 | `/pending` | List all posts waiting for review |
-| `/preview 5` | Show full content of post #5 |
-| `/sources 5` | Show the source article used for post #5 |
-| `/skip 5` | Skip post #5 (no publish) |
+| `/preview <id>` | Show full content of a post |
+| `/sources <id>` | Show the source article used for a post |
+| `/skip <id>` | Skip a post without publishing |
+| `/killstale` | Kill stale Python processes (fixes 409 Conflict / frozen commands) |
 | `/help` | Show all commands |
 
-You can also tap the **✅ Approve** / **❌ Reject** inline buttons sent with each post.
+**On Approve** → published to the bot's channel immediately.
+**On Reject** → bot asks for a reason, marks post rejected.
 
-**On Approve** → post is published to the bot's channel immediately.  
-**On Reject** → bot asks you to type a reason, then marks it rejected.
+> `/generate bollywood` works from **any** reviewer chat — you don't need separate accounts open for each bot.
 
 ---
 
-## Digest Post Format
+## Adding a New Bot
 
-### AI News (English)
+The entire pipeline is bot-agnostic. To add a new bot:
+
+1. **Add a config entry** to `config/bots.json`:
+
+```json
+{
+  "id": "crypto",
+  "name": "Crypto News Bot",
+  "domain": "crypto_finance",
+  "language": "english",
+  "posts_per_day": 1,
+  "schedule_times": ["08:00"],
+  "digest_count": 5,
+  "sources_file": "config/sources_crypto.json",
+  "prompt_file": "generator/prompts_crypto.py",
+  "bot_token_env": "TELEGRAM_CRYPTO_BOT_TOKEN",
+  "channel_id_env": "TELEGRAM_CRYPTO_CHANNEL_ID",
+  "active": true
+}
+```
+
+2. **Create a sources file** — `config/sources_crypto.json` with trusted RSS feeds
+3. **Create a prompt file** — `generator/prompts_crypto.py` with `SYSTEM_PROMPT`, `build_digest_prompt()`, `build_digest_image_prompt()`
+4. **Add env vars** to `.env`:
+   ```env
+   TELEGRAM_CRYPTO_BOT_TOKEN=...
+   TELEGRAM_CRYPTO_CHANNEL_ID=@your_crypto_channel
+   TELEGRAM_CRYPTO_REVIEWER_CHAT_ID=...   # optional
+   ```
+5. **Register the token** in `_get_bot_token()` in `publisher/review_interface.py` and `BOT_CONFIG_MAP` in `publisher/telegram_bot.py`
+6. Set `"active": true` and restart `main.py`
+
+No changes to the core pipeline, scheduler, guardrails, or review interface.
+
+---
+
+## Post Formats
+
+### Digest — AI News (English)
 ```
 📰 AI News Daily — April 04, 2026
 
@@ -174,114 +197,84 @@ You can also tap the **✅ Approve** / **❌ Reject** inline buttons sent with e
 2️⃣ ... (5 stories total)
 
 🔍 Trend Insight
-   What today's stories have in common / where AI is heading
+   What today's stories have in common
 
 #AINews #TechUpdate #ArtificialIntelligence
 ```
 
-### Bollywood (Hindi/Hinglish)
+### Digest — Bollywood (Hindi/Hinglish)
 ```
 🎬 Bollywood Buzz Daily — April 04, 2026
 Aaj ki sabse hot Bollywood khabrein 🌟
 
 1️⃣  Catchy Hinglish headline 🎬
-    Kya hua + kyun interesting hai (2-3 sentences)
+    Kya hua + kyun interesting (2-3 sentences)
     📌 Pinkvilla  |  🔗 Read more
 
 2️⃣ ... (5 stories total)
 
 🔥 Top Trending Gossip
-   Today's most viral story in 2-3 lines
 
 #Bollywood #BollywoodNews #Entertainment
 ```
 
-### Daily Astrology (Hindi/Hinglish)
+### Panchang — Daily Astrology (Hindi/Hinglish)
 ```
-🌙 Aaj ka Tithi: Dwitiya | Shukla Paksha
+🌙 Aaj ki Tithi: Dwitiya | Shukla Paksha
   Rohini Nakshatra • Saubhagya Yoga
 
-🔮 Meaning:
-[3-4 lines on spiritual significance, deity, cosmic energy, nakshatra]
+🔮 Meaning:      [spiritual significance + nakshatra energy]
+💡 Daily Insight: [career / relationships / health / finance]
+🪔 Remedy:        [what, why, how — in 5 minutes at home]
+✨ Tip of the Day: [one action + encouraging closing line]
 
-💡 Daily Insight:
-[3-4 lines on career, relationships, health, finance]
-
-🪔 Remedy:
-[3-4 lines — what to do, why it works, exact steps]
-
-✨ Tip of the Day:
-[2-3 lines — actionable, connected to tithi energy]
-
-#DailyPanchang #AajKaTithi #HinduCalendar #Astrology
+#DailyPanchang #AajKiTithi #Astrology
 ```
-Data scraped from Drik Panchang daily. Falls back to date string if scraping fails — Gemini calculates the tithi from the date.
 
 ---
 
 ## Project Structure
 
 ```
-AI News/
+telegram-bot-factory/
 ├── aggregator/
-│   ├── rss_fetcher.py          # Fetches articles from RSS feeds
-│   ├── panchang_fetcher.py     # Scrapes Drik Panchang for daily tithi/nakshatra
+│   ├── rss_fetcher.py          # Bot-agnostic RSS poller
+│   ├── panchang_fetcher.py     # Scrapes Drik Panchang (astrology bot)
 │   └── dedup.py                # Hash-based deduplication
 ├── scoring/
 │   ├── virality.py             # Scoring engine + source weights + diversity caps
 │   └── fallback.py             # Best-available selection when threshold not met
 ├── guardrails/
 │   ├── content_filter.py       # Pre/post generation safety checks
-│   ├── keyword_blocklist.py    # Blocked keyword categories
+│   ├── keyword_blocklist.py    # Blocked keyword patterns
 │   └── source_whitelist.py     # Trusted source registry
 ├── generator/
 │   ├── claude_client.py        # Euri/Gemini API wrapper + Read more URL injection
-│   ├── prompts_ai_news.py      # Digest templates for AI News Bot
-│   ├── prompts_bollywood.py    # Digest templates for Bollywood Bot
-│   └── prompts_astrology.py    # Templates for Astrology Bot (Hinglish panchang post)
+│   ├── image_card.py           # Astrology image card generator (social + full)
+│   ├── prompts_ai_news.py      # Prompt templates — AI News Bot
+│   ├── prompts_bollywood.py    # Prompt templates — Bollywood Bot
+│   └── prompts_astrology.py    # Prompt templates — Astrology Bot
 ├── publisher/
-│   ├── telegram_bot.py         # Publishes posts + Markdown→HTML converter
-│   ├── review_interface.py     # Review bot (Approve/Reject + /generate command)
+│   ├── telegram_bot.py         # Bot-agnostic publisher + Markdown→HTML converter
+│   ├── review_interface.py     # Review bot — Approve/Reject, /generate, /killstale
 │   └── test_review_interface.py
 ├── scheduler/
-│   └── jobs.py                 # APScheduler jobs, IST timezone
+│   └── jobs.py                 # APScheduler jobs, IST timezone, all active bots
 ├── db/
 │   ├── database.py             # SQLite session management
 │   └── models.py               # Article, Post, PublishLog models
 ├── config/
-│   ├── bots.json               # Master bot registry
-│   ├── sources_ai.json         # AI/tech sources (with category + weight)
-│   ├── sources_bollywood.json  # Bollywood sources (17 sources, 4 groups)
-│   ├── sources_astrology.json  # Astrology reference sources (6 sources)
+│   ├── bots.json               # Master bot registry — one entry per bot
+│   ├── sources_ai.json         # AI/tech trusted sources
+│   ├── sources_bollywood.json  # Bollywood trusted sources
+│   ├── sources_astrology.json  # Astrology reference sources
 │   ├── keywords.json           # Trending + blocked keywords
-│   └── settings.py             # Global config
-├── logs/
-│   ├── app.log
-│   ├── guardrail_violations.log
-│   └── publish_history.log
-├── .claude/
-│   ├── rules/                  # Detailed rules (content, scoring, guardrails, etc.)
-│   └── skills/                 # Reusable patterns and lessons learned
+│   └── settings.py             # Global config (thresholds, model names, API URLs)
 ├── .env.example
 ├── requirements.txt
-├── CLAUDE.md                   # Project index and architecture
+├── CLAUDE.md
 └── main.py
 ```
-
----
-
-## Adding a New Bot
-
-1. Add an entry to `config/bots.json` (follow the existing schema, add `"digest_count": 5`)
-2. Create `config/sources_<id>.json` with trusted RSS sources
-3. Create `generator/prompts_<id>.py` with `SYSTEM_PROMPT`, `build_digest_prompt()`, `build_digest_image_prompt()`
-4. Add `TELEGRAM_<ID_UPPERCASE>_BOT_TOKEN` and `TELEGRAM_<ID_UPPERCASE>_CHANNEL_ID` to `.env`
-5. Optionally add `TELEGRAM_<ID_UPPERCASE>_REVIEWER_CHAT_ID` if reviews should go to a different Telegram account
-6. Add the token to `_get_bot_token()` in `publisher/review_interface.py` and `BOT_CONFIG_MAP` in `publisher/telegram_bot.py`
-7. If using a custom reviewer chat ID, add it to `_get_reviewer_chat_id()` in `publisher/review_interface.py`
-8. Set `"active": true` in `bots.json` and restart
-
-No changes to the core pipeline needed.
 
 ---
 
@@ -289,8 +282,7 @@ No changes to the core pipeline needed.
 
 | Time | Action |
 |------|--------|
-| 6:00 AM | Fetch panchang (Astrology) + score articles (AI News + Bollywood) |
-| 6:00 AM | Astrology panchang post generated + sent to reviewer |
+| 6:00 AM | Fetch + score (AI News + Bollywood) · Panchang fetch + generate (Astrology) |
 | 7:00 AM | Generate digest + send to reviewer (AI News + Bollywood) |
 | 8:00 AM | Publish if approved; hold until 12 PM if no response |
 | 12:00 PM | Midday fetch (Bollywood only) |
@@ -301,40 +293,38 @@ No changes to the core pipeline needed.
 
 ## Troubleshooting
 
-**409 Conflict — bot already running**
-Another instance is polling the same token. Kill all Python processes and restart:
+**409 Conflict — another instance already running**
+Use `/killstale` in your Telegram reviewer chat — it kills all stale Python processes except the current one and reports what was stopped. Or manually:
 ```bash
-ps aux | grep python | grep -v grep | awk '{print $1}' | xargs kill -9
+taskkill /F /IM python.exe        # Windows
+pkill -f python                   # Linux/Mac
 ```
-Note: `taskkill /F /IM python.exe` does not work in Git Bash — use the command above.
 
-**Approve/Reject button not responding**
-Telegram callback queries expire after ~30 seconds. Tap the button again while the bot process is running — it is safe to tap multiple times.
+**Bot can't send review message (403 Forbidden)**
+The reviewer hasn't started a conversation with that bot. Open Telegram, find the bot, and send `/start`. Then retry.
+Alternatively, use `/generate <bot_id>` from a chat where you've already started the bot — the review message will be delivered through whichever bot you're currently talking to.
 
-**"Chat not found" when sending review**
-`TELEGRAM_REVIEWER_CHAT_ID` must be a numeric ID (e.g. `543925804`), not `@username`.
+**"Chat not found" for reviewer**
+`TELEGRAM_REVIEWER_CHAT_ID` must be a numeric ID (e.g. `543925804`), not `@username`. Get it from `@userinfobot`.
 
-**Review message shows no image / text only**
-Normal — generated image URLs from Euri expire quickly. The bot automatically falls back to text-only if the image URL has expired.
+**Review message shows no image**
+Normal — Euri image URLs expire in ~5 minutes. The bot falls back to text-only automatically. The post can still be approved and published.
 
-**No articles selected / all from one source**
-Run a manual fetch first, then retry:
+**No articles selected / empty digest**
+Run a manual fetch first:
 ```bash
+python aggregator/test_fetch.py ai_news
 python aggregator/test_fetch.py bollywood
-python publisher/test_review_interface.py bollywood
 ```
 
 **Post blocked by guardrails**
-Check `logs/guardrail_violations.log` to see which category triggered and why.
+Check `logs/guardrail_violations.log` to see which category triggered.
 
-**Post generation fails**
-Check your `EURI_API_KEY` is set in `.env`:
+**Generation fails / empty response**
+Check `EURI_API_KEY` is set and quota isn't exhausted (200K tokens/day free tier):
 ```bash
 python test_euri_connection.py
 ```
 
-**Gemini 429 rate limit — generation fails**
-The free Euri tier allows 200K tokens/day. Running many tests in one day exhausts the quota. Wait until the next day — the limit resets daily.
-
-**"Chat not found" for a new bot (e.g. astrology)**
-Telegram bots can only message users who have started a conversation with them. Open Telegram, find your new bot, and send it `/start` from the reviewer account before running the test. Confirm the correct account by checking `getUpdates` — the chat ID in the response must match your `TELEGRAM_<BOT>_REVIEWER_CHAT_ID`.
+**Gemini 429 — rate limit hit**
+Quota resets daily at UTC midnight. Wait and retry the next day.
