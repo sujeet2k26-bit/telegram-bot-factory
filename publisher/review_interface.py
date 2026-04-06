@@ -33,7 +33,7 @@ About async in python-telegram-bot v21:
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 from telegram import (
     Bot,
@@ -1116,10 +1116,22 @@ async def cmd_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 await status_msg.edit_text("❌ No astrology post found. Run /generate first.")
                 return
 
-            post_id   = post.id
-            image_url = post.image_url
-            content   = post.content
-            summary   = post.article.summary if post.article else ""
+            post_id    = post.id
+            image_url  = post.image_url
+            content    = post.content
+            summary    = post.article.summary if post.article else ""
+            post_date  = post.created_at.date() if post.created_at else None
+
+        # Warn if the post being used is not from today (IST)
+        IST = timezone(timedelta(hours=5, minutes=30))
+        today_ist = datetime.now(IST).date()
+        if post_date and post_date < today_ist:
+            await update.message.reply_text(
+                f"⚠️ No post found for today ({today_ist.strftime('%B %d, %Y')}).\n"
+                f"Using the most recent post from {post_date.strftime('%B %d, %Y')} (post #{post_id}).\n\n"
+                f"To generate today's card: run /generate first, then /card.\n"
+                f"Or use /bulkcard 1 to generate today's card directly without a review step."
+            )
 
         if not image_url:
             await status_msg.edit_text(
