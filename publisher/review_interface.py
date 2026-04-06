@@ -931,7 +931,9 @@ def _generate_card_for_date(target_date, ic_mod) -> "str | None":
         return None, scrape_ok
 
     # Step 4: Render image card (Pillow — use fresh image URL immediately)
-    card_path = ic_mod.generate_social_card(image_url, post_text, panchang_summary)
+    # Pass target_date so the card filename and date strip show the correct date,
+    # not today's date (which would cause all bulk cards to overwrite each other).
+    card_path = ic_mod.generate_social_card(image_url, post_text, panchang_summary, target_date)
     return card_path, scrape_ok
 
 

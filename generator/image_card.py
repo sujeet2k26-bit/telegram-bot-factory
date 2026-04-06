@@ -491,6 +491,7 @@ def generate_social_card(
     image_url: str,
     post_content: str,
     panchang_summary: str = "",
+    target_date=None,
 ) -> "str | None":
     """
     Creates a fixed 1080x1350 image card optimised for Instagram and Facebook feed posts.
@@ -514,6 +515,9 @@ def generate_social_card(
         image_url (str):        URL of the Gemini-generated spiritual background image.
         post_content (str):     Full AI-generated panchang post (Telegram format).
         panchang_summary (str): Pipe-delimited panchang string (for tithi/nakshatra fields).
+        target_date:            datetime.date for the card (default: today IST).
+                                Pass explicitly for bulk generation so filename and
+                                date strip show the correct date, not today's date.
 
     Returns:
         str:  Absolute path to the saved JPEG file.
@@ -542,8 +546,14 @@ def generate_social_card(
         return None
 
     # ── Parse panchang fields ──────────────────────────────────────────────────
-    IST     = timezone(timedelta(hours=5, minutes=30))
-    now     = datetime.now(IST)
+    IST = timezone(timedelta(hours=5, minutes=30))
+    if target_date is not None:
+        # Use the explicit target date (bulk generation) so filename and date
+        # strip reflect the card's actual date, not today's system date.
+        now = datetime(target_date.year, target_date.month, target_date.day,
+                       hour=12, tzinfo=IST)
+    else:
+        now = datetime.now(IST)
     fields  = _parse_panchang(panchang_summary) if panchang_summary else {}
     weekday = fields.get("Weekday", fields.get("Vara", now.strftime("%A")))
     tithi   = fields.get("Tithi",     "Shubh Tithi")
