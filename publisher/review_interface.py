@@ -884,14 +884,6 @@ def _generate_card_for_date(target_date, ic_mod) -> "str | None":
     title        = f"Aaj ka Panchang — {display_date}"
     source_url   = f"https://www.drikpanchang.com/panchang/day-panchang.html?date={date_str}"
 
-    # Skip if card already exists — avoids wasting API tokens on regeneration
-    # Returns (path, scrape_ok=True) — scrape status irrelevant for existing cards.
-    card_filename = f"astrology_social_{target_dt.strftime('%Y%m%d')}.jpg"
-    card_path_check = os.path.join("cards", card_filename)
-    if os.path.exists(card_path_check):
-        logger.info("Card already exists for %s — skipping.", display_date)
-        return os.path.abspath(card_path_check), True
-
     # Step 1: Fetch panchang data for this specific date
     panchang_summary = _scrape_drik_panchang(date_str)
     scrape_ok = bool(panchang_summary)
@@ -989,8 +981,7 @@ async def cmd_bulkcard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     status_msg = await update.message.reply_text(
         f"📅 Generating {days} cards starting from {today.strftime('%B %d, %Y')}...\n"
-        f"Estimated time: {days}–{days * 2} minutes. Cards will be sent as they're ready.\n"
-        f"Dates with existing cards will be skipped automatically."
+        f"Estimated time: {days}–{days * 2} minutes. Cards will be sent as they're ready."
     )
 
     loop           = asyncio.get_event_loop()
